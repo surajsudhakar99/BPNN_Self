@@ -1,3 +1,8 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+
 class ANN_Net(nn.Module):
     def __init__(self, N):
         super().__init__()
@@ -41,8 +46,8 @@ class BPNN_Elec_Net(nn.Module):
         super().__init__()
         self.eta = eta ; self.zeta = zeta ; self.lamda = lamda 
         self.R_cutoff = R_cutoff ; self.Rs = Rs 
-        self.elem1 = ElecNet1(inp_num = 2).to(torch.device("cuda:0"))
-        self.elem2 = ElecNet2(inp_num = 2).to(torch.device("cuda:0"))
+        self.elem1 = ElemNet(inp_num = 2).to(torch.device("cuda:0"))
+        self.elem2 = ElemNet(inp_num = 2).to(torch.device("cuda:0"))
 
     def get_parameters(self, atom_type, coord):
         atom1 = {
@@ -122,8 +127,8 @@ class BPNN_Short_Net(nn.Module):
         super().__init__()
         self.eta = eta ; self.zeta = zeta ; self.lamda = lamda 
         self.R_cutoff = R_cutoff ; self.Rs = Rs 
-        self.elem1 = SRPNet1(inp_num = 2).to(torch.device("cuda:0"))
-        self.elem2 = SRPNet2(inp_num = 2).to(torch.device("cuda:0"))
+        self.elem1 = ElemNet(inp_num = 2).to(torch.device("cuda:0"))
+        self.elem2 = ElemNet(inp_num = 2).to(torch.device("cuda:0"))
 
     def af(self, x):
         return 1.0/(1.0+x**2)
@@ -184,7 +189,7 @@ class BPNN_Short_Net(nn.Module):
         return torch.sum(Ei)
 
 
-def Electrostatic_Energy(q_arr, atom_coords):
+def electrostatic_energy(q_arr, atom_coords):
     elec_arr = torch.tensor([0.0])
     k = 0.00899
     for i in range(0, q_arr.shape[0]):
