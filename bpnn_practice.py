@@ -14,14 +14,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import time
 import sys
+import utils
 
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
-ten = torch.tensor([1, 2])
-print(ten.shape[0])
 
 coords = torch.tensor([
                    [0.0, 0.0, 0.0],
@@ -35,8 +33,13 @@ coords = torch.tensor([
                    [1.0, 1.0, 1.0]
 ])
 
-tensor_in_tensor = torch.stack([coords, coords])
-print(tensor_in_tensor.shape)
+dft_energy = 5.234 #units
+dft_charges = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 5.0])
+
+fig = plt.figure(figsize=(8,7))
+ax = fig.add_subplot(111,projection='3d')
+ax.scatter3D(coords[:,0],coords[:,1],coords[:,2])
+fig.savefig('coords.png')
 
 cuda_availability = torch.cuda.is_available()
 if torch.cuda.is_available(): 
@@ -49,177 +52,70 @@ print(f'Cuda availability: {cuda_availability}')
 print(f'Cuda device: {torch.cuda.current_device()}')
 print(f'GPU name: {gpu_name}')
 
-def energy(coords):
-    U_arr = np.array([])
-    for i in range(0, coords.shape[0]):
-        for j in range(i+1, coords.shape[0]):
-            Rij = coords[i]-coords[j]
-            Rij_mod = np.sqrt((Rij[0]**2)+(Rij[1]**2)+(Rij[2]**2))
-            U = (8.98755e9)*(12)*((1.609e-19)**2)/(Rij_mod*(10**(-10)))
-            U_arr = np.append(U_arr, U)
-    return (U_arr.sum())*(10**16)
-
-pot_energy = energy(coords)
-print(pot_energy)
-
-arr = torch.tensor([])
-val = torch.tensor([6])
-arr = torch.cat([arr, val])
-print(arr)
-
-a = np.nan
-print(a is np.nan)
-
-class ANN_Net(nn.Module):
-    def __init__(self, N):
-        super().__init__()
-        self.N = N
-        inp_size = int(3*self.N)
-        self.fc1 = nn.Linear(inp_size, 40)
-        self.fc2 = nn.Linear(40, 40)
-        self.fc3 = nn.Linear(40, 1) 
-
-    def af(self, x):
-        return 1.0/(1.0+x**2)
-
-    def forward(self, x):
-        x = x.view(x.shape[0]*x.shape[1])
-        x = self.af(self.fc1(x))
-        x = self.af(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-class ElemNet1(nn.Module):
-    def __init__(self, inp_num):
-        super().__init__()
-        self.inp_num = inp_num
-        self.elem1fc1 = nn.Linear(self.inp_num, 40)
-        self.elem1fc2 = nn.Linear(40, 40)
-        self.elem1fc3 = nn.Linear(40, 1)
-
-    def af(self, x):
-        return 1.0/(1.0+x**2)
-
-    def forward(self, x):
-        x = self.af(self.elem1fc1(x))
-        x = self.af(self.elem1fc2(x))
-        x = self.elem1fc3(x)
-        return x
-
-class ElemNet2(nn.Module):
-    def __init__(self, inp_num):
-        super().__init__()
-        self.inp_num = inp_num
-        self.elem2fc1 = nn.Linear(self.inp_num, 40)
-        self.elem2fc2 = nn.Linear(40, 40)
-        self.elem2fc3 = nn.Linear(40, 1)
-
-    def af(self, x):
-        return 1.0/(1.0+x**2)
-
-    def forward(self, x):
-        x = self.af(self.elem2fc1(x))
-        x = self.af(self.elem2fc2(x))
-        x = self.elem2fc3(x)
-        return x
-
-class BPNN_Net(nn.Module):
-    def __init__(self, eta, R_cutoff, zeta, lamda, Rs):
-        super().__init__()
-        self.eta = eta ; self.zeta = zeta ; self.lamda = lamda 
-        self.R_cutoff = R_cutoff ; self.Rs = Rs 
-        self.elem1 = ElemNet1(inp_num = 2).to(torch.device("cuda:0"))
-        self.elem2 = ElemNet2(inp_num = 2).to(torch.device("cuda:0"))
-
-    def af(self, x):
-        return 1.0/(1.0+x**2)
-
-    def cutoff_function(self, Rij_mod):
-        if Rij_mod<=self.R_cutoff:
-            fc_ij = 0.5*(torch.cos((np.pi*Rij_mod)/self.R_cutoff)+1)
-            return fc_ij
-        else:
-            return 0.0
-        
-    def radial_G(self, atom_coords, i):
-        gi_arr = torch.tensor([0.0])
-        for j in range(0, atom_coords.shape[0]):
-            if i==j:
-                continue
-            Rij = atom_coords[i]-atom_coords[j]
-            Rij_mod = torch.sqrt((Rij[0]**2)+(Rij[1]**2)+(Rij[2]**2))
-            gi = torch.exp(-self.eta*((Rij_mod-self.Rs)**2))*self.cutoff_function(Rij_mod)
-            gi_arr = torch.cat([gi_arr, torch.tensor([gi])])
-        return torch.sum(gi_arr)
-
-    def angular_G(self, atom_coords, i):
-        gi_arr = torch.tensor([0.0])
-        for j in range(0, atom_coords.shape[0]):
-            for k in range(j+1, atom_coords.shape[0]):
-                if ((i==j) or (j==k) or (i==k)):
-                    continue
-                Rij = atom_coords[i]-atom_coords[j]
-                Rjk = atom_coords[j]-atom_coords[k]
-                Rki = atom_coords[k]-atom_coords[i]
-                Rij_mod = torch.sqrt((Rij[0]**2)+(Rij[1]**2)+(Rij[2]**2))
-                Rjk_mod = torch.sqrt((Rjk[0]**2)+(Rjk[1]**2)+(Rjk[2]**2))
-                Rki_mod = torch.sqrt((Rki[0]**2)+(Rki[1]**2)+(Rki[2]**2))
-                cos_theta = (torch.dot(Rij, Rki))/(Rij_mod*Rki_mod)
-                term1 = (1.0+self.lamda*cos_theta)**self.zeta
-                term2 = torch.exp(-self.eta*(Rij_mod**2+Rjk_mod**2+Rki_mod**2))
-                fc_ij = self.cutoff_function(Rij_mod)
-                fc_jk = self.cutoff_function(Rjk_mod)
-                fc_ki = self.cutoff_function(Rki_mod)
-                term2 = term2*fc_ij*fc_jk*fc_ki
-                gi = term1*term2
-                gi_arr = torch.cat([gi_arr, torch.tensor([gi])])
-        return (2.0**(1-self.zeta))*(torch.sum(gi_arr))
-      
-    def forward(self, x):
-        Ei = torch.tensor([0.0])
-        for i in range(0, x.shape[0]):
-            ang = self.angular_G(x, i)
-            rad = self.radial_G(x, i)
-            Gi = torch.tensor([ang, rad]).float().cuda()
-            if i!=8:
-                Ei_val = self.elem1.forward(Gi)
-                Ei = torch.cat([Ei, torch.tensor([Ei_val])])
-            elif i==8:
-                Ei_val = self.elem2.forward(Gi)
-                Ei = torch.cat([Ei, torch.tensor([Ei_val])])
-        return torch.sum(Ei)
-
-bpnn_net = BPNN_Net(eta=0.1, R_cutoff=3.0, zeta=0.6, lamda=0.8, Rs=1.3)
+#------------------------------Training Electrostatic Potential Network-----------------------------------#
+bpnn_elec_net = utils.BPNN_Elec_Net(eta=0.1, R_cutoff=3.0, zeta=0.6, lamda=0.8, Rs=1.3)
 
 loss_arr = []
+coords_gpu = coords.cuda()
+dft_charges_gpu = torch.tensor(dft_charges).float().cuda()
 
 if torch.cuda.is_available():
-    bpnn_net.to(torch.device("cuda:0"))
+    bpnn_elec_net.to(torch.device("cuda:0"))
     print('Running on GPU')
 
-    coords_gpu = coords.cuda()
-    pot_energy_gpu = torch.tensor(pot_energy).float().cuda()
-    
-    optimizer = optim.Adam(bpnn_net.parameters(), lr=0.001)
+    optimizer = optim.Adam(bpnn_elec_net.parameters(), lr=0.001)
 
-    EPOCHS = 500
-    bpnn_net.train()
+    EPOCHS_elec = 500
+    bpnn_elec_net.train()
 
-    for epochs in range(EPOCHS):    
-        bpnn_net.zero_grad()
-        output = bpnn_net.forward(coords_gpu)
-        print(output)
-        loss = F.mse_loss(output, pot_energy_gpu)
+    for epochs in range(EPOCHS_elec):    
+        bpnn_elec_net.zero_grad()
+        output = bpnn_elec_net.forward(coords_gpu)
+        loss = F.mse_loss(output, dft_charges_gpu)
         loss.backward()
         optimizer.step()
             
-        print(f'{epochs+1}: loss = {loss}')
+        print(f'"ElecNet Training" {epochs+1}: loss = {loss}')
         loss_arr.append(loss)
-        break
+        
+print("ElecNets Training Done!")
+#----------------------------------------------------------------------------------------------------------#
+
+qi_out = bpnn_elec_net(coords_gpu)
+srp_energy = dft_energy-utils.electrostatic_energy(qi_out, coords)
+print(f'Short Range Potential (SRP) Energy = {srp_energy}')
+
+#------------------------------Training Short Range Potential Network-----------------------------------#
+bpnn_short_net = utils.BPNN_Short_Net(eta=0.1, R_cutoff=3.0, zeta=0.6, lamda=0.8, Rs=1.3)
+
+loss_arr = []
+coords_gpu = coords.cuda()
+srp_energy_gpu = torch.tensor(srp_energy).float().cuda()
+
+if torch.cuda.is_available():
+    bpnn_short_net.to(torch.device("cuda:0"))
+    print('Running on GPU')
+
+    optimizer = optim.Adam(bpnn_short_net.parameters(), lr=0.001)
+
+    EPOCHS = 250
+    bpnn_short_net.train()
+
+    for epochs in range(EPOCHS):    
+        bpnn_short_net.zero_grad()
+        output = bpnn_short_net.forward(coords_gpu)
+        loss = F.mse_loss(output, srp_energy_gpu)
+        loss.backward()
+        optimizer.step()
+            
+        print(f'"ShortRangePotential Training" {epochs+1}: loss = {loss}')
+        loss_arr.append(loss)
         
 print("Training Done!")
+#-------------------------------------------------------------------------------------------------------#
 
-ann_net = ANN_Net(N=coords.shape[0])
+#------------------------------Training Simple ANN Network for SRP-----------------------------------#
+ann_net = utils.ANN_Net(N=coords.shape[0])
 
 loss_arr = []
 
@@ -228,17 +124,17 @@ if torch.cuda.is_available():
     print('Running on GPU')
 
     coords_gpu = coords.cuda()
-    pot_energy_gpu = torch.tensor(pot_energy).float().cuda()
+    srp_energy_gpu = torch.tensor(srp_energy).float().cuda()
     
     optimizer = optim.Adam(ann_net.parameters(), lr=0.001)
 
-    EPOCHS = 500
+    EPOCHS = 300
     ann_net.train()
 
     for epochs in range(EPOCHS):    
         ann_net.zero_grad()
         output = ann_net.forward(coords_gpu)
-        loss = F.mse_loss(output, pot_energy_gpu)
+        loss = F.mse_loss(output, srp_energy_gpu)
         loss.backward()
         optimizer.step()
             
@@ -246,13 +142,16 @@ if torch.cuda.is_available():
         loss_arr.append(loss)
         
 print("Training Done!")
+#----------------------------------------------------------------------------------------------------#
 
+# Testing the trained models (Simple ANN v/s BPNN) in terms of symmetry in input coordinates
+ 
 coords2 = torch.tensor([
-                   [2.0, 2.0, 0.0], #
+                   [2.0, 2.0, 0.0], # interchanged coordinates
                    [2.0, 0.0, 0.0],
                    [0.0, 2.0, 0.0],
                    [0.0, 0.0, 2.0],
-                   [0.0, 0.0, 0.0], #
+                   [0.0, 0.0, 0.0], # interchanged coordinates
                    [2.0, 0.0, 2.0],
                    [0.0, 2.0, 2.0],
                    [2.0, 2.0, 2.0],
@@ -262,28 +161,25 @@ coords2 = torch.tensor([
 coords3 = torch.tensor([
                    [0.0, 0.0, 0.0],
                    [2.0, 0.0, 0.0],
-                   [2.0, 2.0, 2.0], #
+                   [2.0, 2.0, 2.0], # interchanged coordinates
                    [0.0, 0.0, 2.0],
                    [2.0, 2.0, 0.0],
                    [2.0, 0.0, 2.0],
                    [0.0, 2.0, 2.0],
-                   [0.0, 2.0, 0.0], #
+                   [0.0, 2.0, 0.0], # interchanged coordinates
                    [1.0, 1.0, 1.0]
 ])
 
-print(coords2.view(coords2.shape[0]*coords2.shape[1]))
-print(coords3.view(coords3.shape[0]*coords3.shape[1]))
 
 coords2_gpu = coords2.float().cuda()
 coords3_gpu = coords3.float().cuda()
 
 m_ann2 = ann_net.forward(coords2_gpu)
 m_ann3 = ann_net.forward(coords3_gpu)
-print(m_ann2)
-print(m_ann3)
+print(f'The SRP Energy using simple ANN for coords2 = {m_ann2}')
+print(f'The SRP Energy using simple ANN for coords3 = {m_ann2}')
 
-m_bpnn2 = bpnn_net.forward(coords2_gpu)
-m_bpnn3 = bpnn_net.forward(coords3_gpu)
-print(m_bpnn2)
-print(m_bpnn3)
-
+m_bpnn2 = bpnn_short_net.forward(coords2_gpu)
+m_bpnn3 = bpnn_short_net.forward(coords3_gpu)
+print(f'The SRP Energy incorporating symmetry functions for coords2 = {m_bpnn2}')
+print(f'The SRP Energy incorporating symmetry functions for coords3 = {m_bpnn3}')
