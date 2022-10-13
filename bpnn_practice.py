@@ -7,6 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1j2_WIrIcQmPqWtum06IIObd_xR_r2GHg
 """
 # Let's begin
+from matplotlib import testing
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -21,24 +22,25 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-coords = torch.tensor([
-                   [0.0, 0.0, 0.0],
-                   [2.0, 0.0, 0.0],
-                   [0.0, 2.0, 0.0],
-                   [0.0, 0.0, 2.0],
-                   [2.0, 2.0, 0.0],
-                   [2.0, 0.0, 2.0],
-                   [0.0, 2.0, 2.0],
-                   [2.0, 2.0, 2.0],
-                   [1.0, 1.0, 1.0]
-])
+coords = torch.zeros(9,3)
+i = 0
+
+file = open('input.dat', 'r')
+for line in file:
+    coords[i] = torch.tensor([float(item) for item in line.strip().split(' ')]) 
+    i += 1
+
+need_testing = False
+nt = input('Do you want to test the model (T/F): ')
+if nt == 'T': 
+    need_testing = True
 
 dft_energy = 5.234 #units
 dft_charges = np.array([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 5.0])
 
 fig = plt.figure(figsize=(8,7))
 ax = fig.add_subplot(111,projection='3d')
-ax.scatter3D(coords[:,0],coords[:,1],coords[:,2])
+ax.scatter3D(coords[:,0],coords[:,1],coords[:,2], s=2**7)
 fig.savefig('coords.png')
 
 cuda_availability = torch.cuda.is_available()
@@ -146,40 +148,42 @@ print("Training Done!")
 
 # Testing the trained models (Simple ANN v/s BPNN) in terms of symmetry in input coordinates
  
-coords2 = torch.tensor([
-                   [2.0, 2.0, 0.0], # interchanged coordinates
-                   [2.0, 0.0, 0.0],
-                   [0.0, 2.0, 0.0],
-                   [0.0, 0.0, 2.0],
-                   [0.0, 0.0, 0.0], # interchanged coordinates
-                   [2.0, 0.0, 2.0],
-                   [0.0, 2.0, 2.0],
-                   [2.0, 2.0, 2.0],
-                   [1.0, 1.0, 1.0]
-])
 
-coords3 = torch.tensor([
-                   [0.0, 0.0, 0.0],
-                   [2.0, 0.0, 0.0],
-                   [2.0, 2.0, 2.0], # interchanged coordinates
-                   [0.0, 0.0, 2.0],
-                   [2.0, 2.0, 0.0],
-                   [2.0, 0.0, 2.0],
-                   [0.0, 2.0, 2.0],
-                   [0.0, 2.0, 0.0], # interchanged coordinates
-                   [1.0, 1.0, 1.0]
-])
+if need_testing == True:
+    coords2 = torch.tensor([
+                    [2.0, 2.0, 0.0], # interchanged coordinates
+                    [2.0, 0.0, 0.0],
+                    [0.0, 2.0, 0.0],
+                    [0.0, 0.0, 2.0],
+                    [0.0, 0.0, 0.0], # interchanged coordinates
+                    [2.0, 0.0, 2.0],
+                    [0.0, 2.0, 2.0],
+                    [2.0, 2.0, 2.0],
+                    [1.0, 1.0, 1.0]
+    ])
+
+    coords3 = torch.tensor([
+                    [0.0, 0.0, 0.0],
+                    [2.0, 0.0, 0.0],
+                    [2.0, 2.0, 2.0], # interchanged coordinates
+                    [0.0, 0.0, 2.0],
+                    [2.0, 2.0, 0.0],
+                    [2.0, 0.0, 2.0],
+                    [0.0, 2.0, 2.0],
+                    [0.0, 2.0, 0.0], # interchanged coordinates
+                    [1.0, 1.0, 1.0]
+    ])
 
 
-coords2_gpu = coords2.float().cuda()
-coords3_gpu = coords3.float().cuda()
+    coords2_gpu = coords2.float().cuda()
+    coords3_gpu = coords3.float().cuda()
 
-m_ann2 = ann_net.forward(coords2_gpu)
-m_ann3 = ann_net.forward(coords3_gpu)
-print(f'The SRP Energy using simple ANN for coords2 = {m_ann2}')
-print(f'The SRP Energy using simple ANN for coords3 = {m_ann2}')
+    m_ann2 = ann_net.forward(coords2_gpu)
+    m_ann3 = ann_net.forward(coords3_gpu)
+    print(f'The SRP Energy using simple ANN for coords2 = {m_ann2}')
+    print(f'The SRP Energy using simple ANN for coords3 = {m_ann2}')
 
-m_bpnn2 = bpnn_short_net.forward(coords2_gpu)
-m_bpnn3 = bpnn_short_net.forward(coords3_gpu)
-print(f'The SRP Energy incorporating symmetry functions for coords2 = {m_bpnn2}')
-print(f'The SRP Energy incorporating symmetry functions for coords3 = {m_bpnn3}')
+    m_bpnn2 = bpnn_short_net.forward(coords2_gpu)
+    m_bpnn3 = bpnn_short_net.forward(coords3_gpu)
+    print(f'The SRP Energy incorporating symmetry functions for coords2 = {m_bpnn2}')
+    print(f'The SRP Energy incorporating symmetry functions for coords3 = {m_bpnn3}')
