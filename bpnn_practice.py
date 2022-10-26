@@ -22,13 +22,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-coords = torch.zeros(9,3)
-i = 0
+def get_points(file_name):
+    i = 0
+    coord = torch.zeros(9,3)
+    f = open(file_name, 'r')
+    for line in f:
+        coord[i] = torch.tensor([float(item) for item in line.strip().split(' ')]) 
+        i += 1
+    return coord
 
-file = open('input.dat', 'r')
-for line in file:
-    coords[i] = torch.tensor([float(item) for item in line.strip().split(' ')]) 
-    i += 1
+coords = get_points('input.dat')
+#print(coords)
+#sys.exit()
 
 need_testing = False
 nt = input('Do you want to test the model (T/F): ')
@@ -43,16 +48,14 @@ ax = fig.add_subplot(111,projection='3d')
 ax.scatter3D(coords[:,0],coords[:,1],coords[:,2], s=2**7)
 fig.savefig('coords.png')
 
-cuda_availability = torch.cuda.is_available()
 if torch.cuda.is_available(): 
-    cuda_device = torch.cuda.current_device()
-    gpu_name = torch.cuda.get_device_name(cuda_device)
+    print(f'Cuda availability: {torch.cuda.is_available()}')
+    print(f'Cuda device: {torch.cuda.current_device()}')
+    print(f'GPU name: {torch.cuda.get_device_name(torch.cuda.current_device())}')
 else: 
-    print('Cuda is not available!')
+    sys.exit('Cuda is not available!')
+    
 
-print(f'Cuda availability: {cuda_availability}')
-print(f'Cuda device: {torch.cuda.current_device()}')
-print(f'GPU name: {gpu_name}')
 
 #------------------------------Training Electrostatic Potential Network-----------------------------------#
 bpnn_elec_net = utils.BPNN_Elec_Net(eta=0.1, R_cutoff=3.0, zeta=0.6, lamda=0.8, Rs=1.3)
@@ -83,7 +86,7 @@ if torch.cuda.is_available():
 print("ElecNets Training Done!")
 #----------------------------------------------------------------------------------------------------------#
 
-qi_out = bpnn_elec_net(coords_gpu)
+qi_out = bpnn_elec_net(coords_gpu).clone().detach().cpu()
 srp_energy = dft_energy-utils.electrostatic_energy(qi_out, coords)
 print(f'Short Range Potential (SRP) Energy = {srp_energy}')
 
@@ -174,16 +177,20 @@ if need_testing == True:
                     [1.0, 1.0, 1.0]
     ])
 
-
+    print(f'coords2 = {coords2}')
+    print(f'coords3 = {coords3}')
     coords2_gpu = coords2.float().cuda()
     coords3_gpu = coords3.float().cuda()
 
     m_ann2 = ann_net.forward(coords2_gpu)
     m_ann3 = ann_net.forward(coords3_gpu)
     print(f'The SRP Energy using simple ANN for coords2 = {m_ann2}')
-    print(f'The SRP Energy using simple ANN for coords3 = {m_ann2}')
+    print(f'The SRP Energy using simple ANN for coords3 = {m_ann3}')
 
     m_bpnn2 = bpnn_short_net.forward(coords2_gpu)
     m_bpnn3 = bpnn_short_net.forward(coords3_gpu)
     print(f'The SRP Energy incorporating symmetry functions for coords2 = {m_bpnn2}')
     print(f'The SRP Energy incorporating symmetry functions for coords3 = {m_bpnn3}')
+    print('-------------------------------------------------------------------------------------------------------------------------')
+    print('Note that the simple ANN treats coords2 and coords3 differently! But the BP symmetry functions considers them to be same!')
+    print('-------------------------------------------------------------------------------------------------------------------------')
